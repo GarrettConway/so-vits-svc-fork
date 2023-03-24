@@ -16,6 +16,7 @@ from numpy import dtype, float32, ndarray
 from scipy.io.wavfile import read
 from torch import FloatTensor, Tensor
 from tqdm import tqdm
+import os
 
 LOG = getLogger(__name__)
 MATPLOTLIB_FLAG = False
@@ -244,6 +245,7 @@ def compute_f0(
     sampling_rate: int = 44100,
     hop_length: int = 512,
     method: Literal["crepe", "crepe-tiny", "parselmouth", "dio", "harvest"] = "crepe",
+    enable_logging = True,
     **kwargs,
 ):
     with timer() as t:
@@ -262,7 +264,8 @@ def compute_f0(
         else:
             raise ValueError("type must be dio, crepe, harvest or parselmouth")
     rtf = t.elapsed / (len(wav_numpy) / sampling_rate)
-    LOG.info(f"F0 inference time:       {t.elapsed:.3f}s, RTF: {rtf:.3f}")
+    if enable_logging:
+        LOG.info(f"F0 inference time:       {t.elapsed:.3f}s, RTF: {rtf:.3f}")
     return f0
 
 
@@ -283,13 +286,7 @@ def f0_to_coarse(f0: torch.Tensor | float):
     return f0_coarse
 
 
-def download_file(
-    url: str,
-    filepath: Path | str,
-    chunk_size: int = 4 * 1024,
-    tqdm_cls: type = tqdm,
-    **kwargs,
-):
+def download_file(url: str, filepath: Path | str, chunk_size: int = 4 * 1024, **kwargs):
     filepath = Path(filepath)
     filepath.parent.mkdir(parents=True, exist_ok=True)
     temppath = filepath.parent / f"{filepath.name}.download"
@@ -298,7 +295,7 @@ def download_file(
     temppath.unlink(missing_ok=True)
     resp = requests.get(url, stream=True)
     total = int(resp.headers.get("content-length", 0))
-    with temppath.open("wb") as f, tqdm_cls(
+    with temppath.open("wb") as f, tqdm(
         total=total,
         unit="iB",
         unit_scale=True,
@@ -311,7 +308,7 @@ def download_file(
     temppath.rename(filepath)
 
 
-def ensure_pretrained_model(folder_path: Path, **kwargs) -> None:
+def ensure_pretrained_model(folder_path: Path) -> None:
     model_urls = [
         # "https://huggingface.co/innnky/sovits_pretrained/resolve/main/sovits4/G_0.pth",
         "https://huggingface.co/therealvul/so-vits-svc-4.0-init/resolve/main/D_0.pth",
@@ -321,19 +318,17 @@ def ensure_pretrained_model(folder_path: Path, **kwargs) -> None:
     for model_url in model_urls:
         model_path = folder_path / model_url.split("/")[-1]
         if not model_path.exists():
-            download_file(
-                model_url, model_path, desc=f"Downloading {model_path.name}", **kwargs
-            )
+            download_file(model_url, model_path, desc=f"Downloading {model_path.name}")
 
 
-def ensure_hubert_model(**kwargs) -> Path:
+def ensure_hubert_model() -> Path:
     vec_path = Path("checkpoint_best_legacy_500.pt")
     vec_path.parent.mkdir(parents=True, exist_ok=True)
     if not vec_path.exists():
         # url = "http://obs.cstcloud.cn/share/obs/sankagenkeshi/checkpoint_best_legacy_500.pt"
         # url = "https://huggingface.co/innnky/contentvec/resolve/main/checkpoint_best_legacy_500.pt"
         url = "https://huggingface.co/therealvul/so-vits-svc-4.0-init/resolve/main/checkpoint_best_legacy_500.pt"
-        download_file(url, vec_path, desc="Downloading Hubert model", **kwargs)
+        download_file(url, vec_path, desc="Downloading Hubert model")
     return vec_path
 
 
@@ -350,7 +345,7 @@ def get_hubert_model():
     return model
 
 
-def get_hubert_content(hmodel, wav_16k_tensor):
+def get_hubert_content(hmodel, wav_16k_tensor, enable_logging=True):
     with timer() as t:
         feats = wav_16k_tensor
         if feats.dim() == 2:  # double channels
@@ -368,9 +363,10 @@ def get_hubert_content(hmodel, wav_16k_tensor):
             feats = hmodel.final_proj(logits[0])
         res = feats.transpose(1, 2)
     wav_len = wav_16k_tensor.shape[-1] / 16000
-    LOG.info(
-        f"HuBERT inference time  : {t.elapsed:.3f}s, RTF: {t.elapsed / wav_len:.3f}"
-    )
+    if enable_logging:
+        LOG.info(
+            f"HuBERT inference time  : {t.elapsed:.3f}s, RTF: {t.elapsed / wav_len:.3f}"
+        )
     return res
 
 
@@ -390,11 +386,18 @@ def load_checkpoint(
     if not Path(checkpoint_path).is_file():
         raise FileNotFoundError(f"File {checkpoint_path} not found")
     checkpoint_dict = torch.load(checkpoint_path, map_location="cpu")
-    iteration = checkpoint_dict["iteration"]
-    learning_rate = checkpoint_dict["learning_rate"]
+    if "iteration" in checkpoint_dict.keys():
+        iteration = checkpoint_dict["iteration"]
+    else:
+        iteration = 0
+    if "learning_rate" in checkpoint_dict.keys():
+        learning_rate = checkpoint_dict["learning_rate"]
+    else:
+        learning_rate = None
     if (
         optimizer is not None
         and not skip_optimizer
+        and "optimizer" in checkpoint_dict.keys()
         and checkpoint_dict["optimizer"] is not None
     ):
         optimizer.load_state_dict(checkpoint_dict["optimizer"])
@@ -416,7 +419,24 @@ def load_checkpoint(
         except Exception as e:
             LOG.exception(e)
             LOG.error("%s is not in the checkpoint" % k)
-            new_state_dict[k] = v
+            # Hacky way to convert from DDP to compiled torch2
+            if "_orig_mod." in k:
+                try:
+                    ddp_k = k.removeprefix("_orig_mod.")
+                    new_state_dict[k] = saved_state_dict[ddp_k]
+                    LOG.info("Successfully corrected the param path.")
+                except Exception as e:
+                    LOG.error("Failed to correct the param path.")
+                    new_state_dict[k] = v
+            elif "_orig_mod."+k in saved_state_dict:
+                try:
+                    new_state_dict[k] = saved_state_dict["_orig_mod."+k]
+                    LOG.info("Successfully corrected the param path.")
+                except Exception as e:
+                    LOG.error("Failed to correct the param path.")
+                    new_state_dict[k] = v
+            else:
+                new_state_dict[k] = v
     if hasattr(model, "module"):
         model.module.load_state_dict(new_state_dict)
     else:
@@ -447,37 +467,24 @@ def save_checkpoint(
         checkpoint_path,
     )
 
-
-def clean_checkpoints(
-    path_to_models: Path | str, n_ckpts_to_keep: int = 2, sort_by_time: bool = True
-):
+def clean_checkpoints(path_to_models='logs/44k/', n_ckpts_to_keep=2, sort_by_time=True):
     """Freeing up space by deleting saved ckpts
 
-    Arguments:
-    path_to_models    --  Path to the model directory
-    n_ckpts_to_keep   --  Number of ckpts to keep, excluding G_0.pth and D_0.pth
-    sort_by_time      --  True -> chronologically delete ckpts
-                          False -> lexicographically delete ckpts
+      Arguments:
+      path_to_models    --  Path to the model directory
+      n_ckpts_to_keep   --  Number of ckpts to keep, excluding G_0.pth and D_0.pth
+      sort_by_time      --  True -> chronologically delete ckpts
+                            False -> lexicographically delete ckpts
     """
-    path_to_models = Path(path_to_models)
-    name_key = lambda p: int(re.match(r"._(\d+)", p.stem).group(1))
-    time_key = lambda p: p.stat().st_mtime
-    models_sorted = sorted(
-        filter(
-            lambda p: (p.is_file() and re.match(r"._\d+", p.stem)),
-            path_to_models.glob("*.pth"),
-        ),
-        key=time_key if sort_by_time else name_key,
-    )
-    models_sorted_grouped = groupby(models_sorted, lambda p: p.stem[0])
-    for k, g in models_sorted_grouped:
-        to_dels = list(g)[:-n_ckpts_to_keep]
-        for to_del in to_dels:
-            if to_del.stem.endswith("_0"):
-                continue
-            LOG.warning(f"Removing {to_del}")
-            to_del.unlink()
-
+    ckpts_files = [f for f in os.listdir(path_to_models) if os.path.isfile(os.path.join(path_to_models, f))]
+    name_key = (lambda _f: int(re.compile('._(\d+)\.pth').match(_f).group(1)))
+    time_key = (lambda _f: os.path.getmtime(os.path.join(path_to_models, _f)))
+    sort_key = time_key if sort_by_time else name_key
+    x_sorted = lambda _x: sorted([f for f in ckpts_files if f.startswith(_x) and not f.endswith('_0.pth')], key=sort_key)
+    to_del = [os.path.join(path_to_models, fn) for fn in (x_sorted('G')[:-n_ckpts_to_keep] + x_sorted('D')[:-n_ckpts_to_keep])]
+    del_info = lambda fn: LOG.info(f".. Free up space by deleting ckpt {fn}")
+    del_routine = lambda x: [os.remove(x), del_info(x)]
+    rs = [del_routine(fn) for fn in to_del]
 
 def summarize(
     writer,

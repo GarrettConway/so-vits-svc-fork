@@ -1,9 +1,8 @@
 import torch
 from torch import nn
-from torch.nn import Conv1d, Conv2d
+from torch.nn import AvgPool1d, Conv1d, Conv2d
 from torch.nn import functional as F
 from torch.nn.utils import spectral_norm, weight_norm
-
 import so_vits_svc_fork.modules.attentions as attentions
 import so_vits_svc_fork.modules.commons as commons
 import so_vits_svc_fork.modules.modules as modules
@@ -12,6 +11,8 @@ from . import utils
 from .modules.commons import get_padding
 from .utils import f0_to_coarse
 from .vdecoder.hifigan.models import Generator
+
+import torch.autograd.profiler as profiler
 
 
 class ResidualCouplingBlock(nn.Module):
@@ -142,7 +143,7 @@ class DiscriminatorP(torch.nn.Module):
         super().__init__()
         self.period = period
         self.use_spectral_norm = use_spectral_norm
-        norm_f = weight_norm if use_spectral_norm == False else spectral_norm
+        norm_f = weight_norm if not use_spectral_norm else spectral_norm
         self.convs = nn.ModuleList(
             [
                 norm_f(
@@ -219,14 +220,21 @@ class DiscriminatorP(torch.nn.Module):
 class DiscriminatorS(torch.nn.Module):
     def __init__(self, use_spectral_norm=False):
         super().__init__()
-        norm_f = weight_norm if use_spectral_norm == False else spectral_norm
+        norm_f = weight_norm if not use_spectral_norm else spectral_norm
         self.convs = nn.ModuleList(
             [
-                norm_f(Conv1d(1, 16, 15, 1, padding=7)),
-                norm_f(Conv1d(16, 64, 41, 4, groups=4, padding=20)),
-                norm_f(Conv1d(64, 256, 41, 4, groups=16, padding=20)),
-                norm_f(Conv1d(256, 1024, 41, 4, groups=64, padding=20)),
-                norm_f(Conv1d(1024, 1024, 41, 4, groups=256, padding=20)),
+                # norm_f(Conv1d(1, 16, 15, 1, padding=7)),
+                # norm_f(Conv1d(16, 64, 41, 4, groups=4, padding=20)),
+                # norm_f(Conv1d(64, 256, 41, 4, groups=16, padding=20)),
+                # norm_f(Conv1d(256, 1024, 41, 4, groups=64, padding=20)),
+                # norm_f(Conv1d(1024, 1024, 41, 4, groups=256, padding=20)),
+                # norm_f(Conv1d(1024, 1024, 5, 1, padding=2)),
+                norm_f(Conv1d(1, 128, 15, 1, padding=7)),
+                norm_f(Conv1d(128, 128, 41, 2, groups=4, padding=20)),
+                norm_f(Conv1d(128, 256, 41, 2, groups=16, padding=20)),
+                norm_f(Conv1d(256, 512, 41, 4, groups=16, padding=20)),
+                norm_f(Conv1d(512, 1024, 41, 4, groups=16, padding=20)),
+                norm_f(Conv1d(1024, 1024, 41, 1, groups=16, padding=20)),
                 norm_f(Conv1d(1024, 1024, 5, 1, padding=2)),
             ]
         )
@@ -251,11 +259,9 @@ class MultiPeriodDiscriminator(torch.nn.Module):
         super().__init__()
         periods = [2, 3, 5, 7, 11]
 
-        discs = [DiscriminatorS(use_spectral_norm=use_spectral_norm)]
-        discs = discs + [
+        self.discriminators = nn.ModuleList([
             DiscriminatorP(i, use_spectral_norm=use_spectral_norm) for i in periods
-        ]
-        self.discriminators = nn.ModuleList(discs)
+        ])
 
     def forward(self, y, y_hat):
         y_d_rs = []
@@ -269,6 +275,128 @@ class MultiPeriodDiscriminator(torch.nn.Module):
             y_d_gs.append(y_d_g)
             fmap_rs.append(fmap_r)
             fmap_gs.append(fmap_g)
+
+        return y_d_rs, y_d_gs, fmap_rs, fmap_gs
+
+
+class MultiScaleDiscriminator(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.discriminators = nn.ModuleList(
+            [
+                DiscriminatorS(use_spectral_norm=True),
+                DiscriminatorS(),
+                DiscriminatorS(),
+            ]
+        )
+        self.meanpools = nn.ModuleList(
+            [AvgPool1d(4, 2, padding=2), AvgPool1d(4, 2, padding=2)]
+        )
+
+    def forward(self, y, y_hat):
+        y_d_rs = []
+        y_d_gs = []
+        fmap_rs = []
+        fmap_gs = []
+        for i, d in enumerate(self.discriminators):
+            if i != 0:
+                y = self.meanpools[i - 1](y)
+                y_hat = self.meanpools[i - 1](y_hat)
+            y_d_r, fmap_r = d(y)
+            y_d_g, fmap_g = d(y_hat)
+            y_d_rs.append(y_d_r)
+            fmap_rs.append(fmap_r)
+            y_d_gs.append(y_d_g)
+            fmap_gs.append(fmap_g)
+
+        return y_d_rs, y_d_gs, fmap_rs, fmap_gs
+
+class DiscriminatorR(torch.nn.Module):
+    def __init__(self, resolution, use_spectral_norm=False):
+        super(DiscriminatorR, self).__init__()
+
+        self.resolution = resolution
+        self.LRELU_SLOPE = 0.2 # Hardcoded
+
+        norm_f = weight_norm if not use_spectral_norm else spectral_norm
+
+        self.convs = nn.ModuleList([
+            norm_f(nn.Conv2d(1, 32, (3, 9), padding=(1, 4))),
+            norm_f(nn.Conv2d(32, 32, (3, 9), stride=(1, 2), padding=(1, 4))),
+            norm_f(nn.Conv2d(32, 32, (3, 9), stride=(1, 2), padding=(1, 4))),
+            norm_f(nn.Conv2d(32, 32, (3, 9), stride=(1, 2), padding=(1, 4))),
+            norm_f(nn.Conv2d(32, 32, (3, 3), padding=(1, 1))),
+        ])
+        self.conv_post = norm_f(nn.Conv2d(32, 1, (3, 3), padding=(1, 1)))
+
+    def forward(self, x):
+        fmap = []
+
+        x = self.spectrogram(x)
+        x = x.unsqueeze(1)
+        for l in self.convs:
+            x = l(x)
+            x = F.leaky_relu(x, self.LRELU_SLOPE)
+            fmap.append(x)
+        x = self.conv_post(x)
+        fmap.append(x)
+        x = torch.flatten(x, 1, -1)
+
+        return x, fmap
+
+    def spectrogram(self, x):
+        n_fft, hop_length, win_length = self.resolution
+        x = F.pad(x, (int((n_fft - hop_length) / 2), int((n_fft - hop_length) / 2)), mode='reflect')
+        x = x.squeeze(1)
+        x = torch.stft(x, n_fft=n_fft, hop_length=hop_length, win_length=win_length, center=False, return_complex=False) #[B, F, TT, 2]
+        mag = torch.norm(x, p=2, dim =-1) #[B, F, TT]
+
+        return mag
+
+
+class MultiResolutionDiscriminator(torch.nn.Module):
+    def __init__(self, use_spectral_norm=False):
+        super(MultiResolutionDiscriminator, self).__init__()
+        self.resolutions = [(1024, 120, 600), (2048, 240, 1200), (512, 50, 240)] # Hard coded
+        self.discriminators = nn.ModuleList(
+            [DiscriminatorR(resolution, use_spectral_norm) for resolution in self.resolutions]
+        )
+
+    def forward(self, y, y_hat):
+        y_d_rs = []
+        y_d_gs = []
+        fmap_rs = []
+        fmap_gs = []
+        for d in self.discriminators:
+            y_d_r, fmap_r = d(y)
+            y_d_g, fmap_g = d(y_hat)
+            y_d_rs.append(y_d_r)
+            fmap_rs.append(fmap_r)
+            y_d_gs.append(y_d_g)
+            fmap_gs.append(fmap_g)
+
+        return y_d_rs, y_d_gs, fmap_rs, fmap_gs
+
+
+class Discriminator(torch.nn.Module):
+    def __init__(self, use_spectral_norm=False):
+        super().__init__()
+        self.multi_period_discriminator = MultiPeriodDiscriminator(use_spectral_norm=use_spectral_norm)
+        self.multi_scale_discriminator = MultiScaleDiscriminator()
+        self.multi_resolution_discriminator = MultiResolutionDiscriminator(use_spectral_norm=use_spectral_norm)
+
+    def forward(self, y, y_hat):
+        with profiler.record_function("MultiPeriodDiscriminator"):
+            y_d_rs_periods, y_d_gs_periods, fmap_rs_periods, fmap_gs_periods = self.multi_period_discriminator(y, y_hat)
+        with profiler.record_function("MultiScaleDiscriminator"):
+            y_d_rs_scales, y_d_gs_scales, fmap_rs_scales, fmap_gs_scales = self.multi_scale_discriminator(y, y_hat)
+        with profiler.record_function("MultiResolutionDiscriminator"):
+            y_d_rs_resols, y_d_gs_resols, fmap_rs_resols, fmap_gs_resols = self.multi_resolution_discriminator(y, y_hat)
+
+        y_d_rs = y_d_rs_periods + y_d_rs_scales + y_d_rs_resols
+        y_d_gs = y_d_gs_periods + y_d_gs_scales + y_d_gs_resols
+        fmap_rs = fmap_rs_periods + fmap_rs_scales + fmap_rs_resols
+        fmap_gs = fmap_gs_periods + fmap_gs_scales + fmap_gs_resols
 
         return y_d_rs, y_d_gs, fmap_rs, fmap_gs
 
@@ -436,6 +564,7 @@ class SynthesizerTrn(nn.Module):
             "upsample_kernel_sizes": upsample_kernel_sizes,
             "gin_channels": gin_channels,
         }
+
         self.dec = Generator(h=hps)
         self.enc_q = Encoder(
             spec_channels,

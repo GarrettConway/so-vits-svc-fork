@@ -29,6 +29,7 @@ def preprocess_config(
     val_list_path: Path | str,
     test_list_path: Path | str,
     config_path: Path | str,
+    keep_old_speaker_embeddings: bool = False,
 ):
     input_dir = Path(input_dir)
     train_list_path = Path(train_list_path)
@@ -38,11 +39,22 @@ def preprocess_config(
     train = []
     val = []
     test = []
-    spk_dict = {}
+    spk_dict = dict()
     spk_id = 0
+    if keep_old_speaker_embeddings:
+        try:
+            old_config = deepcopy(
+                json.loads(config_path.read_text())
+            )
+            spk_dict = old_config["spk"]
+            spk_id = max(spk_dict.values()) + 1
+        except Exception as e:
+            LOG.error("Failed to load old config file previous speaker embeddings")
+            LOG.error(e)
     for speaker in os.listdir(input_dir):
-        spk_dict[speaker] = spk_id
-        spk_id += 1
+        if speaker not in spk_dict.keys():
+            spk_dict[speaker] = spk_id
+            spk_id += 1
         paths = []
         for path in tqdm(list((input_dir / speaker).glob("**/*.wav"))):
             pattern = re.compile(r"^[\.a-zA-Z0-9_\/]+$")

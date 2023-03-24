@@ -452,10 +452,19 @@ def pre_resample(input_dir: Path, output_dir: Path, sampling_rate: int) -> None:
     default=Path("./configs/44k/config.json"),
     help="path to config",
 )
+@click.option(
+    "-k",
+    "--keep-old-speaker-embeddings",
+    type=bool,
+    default=False,
+    is_flag=True,
+    help="Keep the speaker mappings from the old config, adding new embeddings for any new speakers",
+)
 def pre_config(
     input_dir: Path,
     filelist_path: Path,
     config_path: Path,
+    keep_old_speaker_embeddings: bool,
 ):
     """Preprocessing part 2: config"""
     from .preprocess_flist_config import preprocess_config
@@ -469,6 +478,7 @@ def pre_config(
         val_list_path=filelist_path / "val.txt",
         test_list_path=filelist_path / "test.txt",
         config_path=config_path,
+        keep_old_speaker_embeddings=keep_old_speaker_embeddings,
     )
 
 

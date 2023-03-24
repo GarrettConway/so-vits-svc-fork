@@ -269,6 +269,7 @@ class Svc:
             LOG.info(f"Chunk: {chunk}")
             if not chunk.is_speech:
                 audio_chunk_infer = np.zeros_like(chunk.audio)
+                #audio_chunk_infer = chunk.audio
             else:
                 # pad
                 pad_len = int(sr * pad_seconds)
@@ -289,7 +290,6 @@ class Svc:
                     f0_method=f0_method,
                 )
                 audio_chunk_pad_infer = audio_chunk_pad_infer_tensor.cpu().numpy()
-                pad_len = int(self.target_sample * pad_seconds)
                 cut_len_2 = (len(audio_chunk_pad_infer) - len(chunk.audio)) // 2
                 audio_chunk_infer = audio_chunk_pad_infer[
                     cut_len_2 : cut_len_2 + len(chunk.audio)

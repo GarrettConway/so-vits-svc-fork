@@ -4,7 +4,7 @@ import torch
 from torch.nn import functional as F
 
 
-def slice_pitch_segments(x, ids_str, segment_size=4):
+def slice_pitch_segments_old(x, ids_str, segment_size=4):
     ret = torch.zeros_like(x[:, :segment_size])
     for i in range(x.size(0)):
         idx_str = ids_str[i]
@@ -13,12 +13,26 @@ def slice_pitch_segments(x, ids_str, segment_size=4):
     return ret
 
 
+def slice_pitch_segments(x, ids_str, segment_size=4):
+    b, t = x.size()  # Get the dimensions of the input tensor (batch_size, time_steps)
+
+    # Create a tensor of time indices and expand it to match the batch size
+    time_indices = torch.arange(segment_size, device=x.device).expand(b, -1)
+
+    # Add the starting indices (ids_str) to the time_indices
+    indices = ids_str.view(-1, 1) + time_indices
+
+    # Use torch.gather to collect the values from the input tensor based on the provided indices
+    ret = torch.gather(x, 1, indices)
+    return ret
+
+
 def rand_slice_segments_with_pitch(x, pitch, x_lengths=None, segment_size=4):
     b, d, t = x.size()
     if x_lengths is None:
         x_lengths = t
     ids_str_max = x_lengths - segment_size + 1
-    ids_str = (torch.rand([b]).to(device=x.device) * ids_str_max).to(dtype=torch.long)
+    ids_str = (torch.rand([b], device=x.device) * ids_str_max).to(dtype=torch.long)
     ret = slice_segments(x, ids_str, segment_size)
     ret_pitch = slice_pitch_segments(pitch, ids_str, segment_size)
     return ret, ret_pitch, ids_str
@@ -66,12 +80,26 @@ def rand_gumbel_like(x):
     return g
 
 
-def slice_segments(x, ids_str, segment_size=4):
+def slice_segments_old(x, ids_str, segment_size=4):
     ret = torch.zeros_like(x[:, :, :segment_size])
     for i in range(x.size(0)):
         idx_str = ids_str[i]
         idx_end = idx_str + segment_size
         ret[i] = x[i, :, idx_str:idx_end]
+    return ret
+
+
+def slice_segments(x, ids_str, segment_size=4):
+    b, d, t = x.size()  # Get the dimensions of the input tensor (batch_size, feature_dim, time_steps)
+
+    # Create a tensor of time indices and expand it to match the batch size
+    time_indices = torch.arange(segment_size, device=x.device).expand(b, -1)
+
+    # Add the starting indices (ids_str) to the time_indices and expand the dimensions to match the input tensor
+    indices = (ids_str.view(-1, 1) + time_indices).unsqueeze(1).expand(-1, d, -1)
+
+    # Use torch.gather to collect the values from the input tensor based on the provided indices
+    ret = torch.gather(x, 2, indices)
     return ret
 
 
@@ -123,13 +151,34 @@ def cat_timing_signal_1d(x, min_timescale=1.0, max_timescale=1.0e4, axis=1):
     return torch.cat([x, signal.to(dtype=x.dtype, device=x.device)], axis)
 
 
-def subsequent_mask(length):
+def subsequent_mask(length: int) -> torch.Tensor:
     mask = torch.tril(torch.ones(length, length)).unsqueeze(0).unsqueeze(0)
     return mask
 
 
-@torch.jit.script
-def fused_add_tanh_sigmoid_multiply(input_a, input_b, n_channels):
+# @torch.jit.script
+# def fused_add_tanh_sigmoid_multiply(input_a, input_b, n_channels):
+#     n_channels_int = n_channels[0]
+#     in_act = input_a + input_b
+#     t_act = torch.tanh(in_act[:, :n_channels_int, :])
+#     s_act = torch.sigmoid(in_act[:, n_channels_int:, :])
+#     acts = t_act * s_act
+#     return acts
+
+
+def fused_add_tanh_sigmoid_multiply(input_a: torch.Tensor, input_b: torch.Tensor, n_channels) -> torch.Tensor:
+    """
+    ChatGPT4 generated
+    This function combines addition, tanh, and sigmoid functions, and element-wise multiplication.
+
+    Args:
+        input_a (Tensor): The first input tensor.
+        input_b (Tensor): The second input tensor.
+        n_channels (?): ?
+
+    Returns:
+        Tensor: The resulting tensor after applying the custom activation function.
+    """
     n_channels_int = n_channels[0]
     in_act = input_a + input_b
     t_act = torch.tanh(in_act[:, :n_channels_int, :])
