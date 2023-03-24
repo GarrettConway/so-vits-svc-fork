@@ -1,8 +1,10 @@
 import torch
+import torch.autograd.profiler as profiler
 from torch import nn
 from torch.nn import AvgPool1d, Conv1d, Conv2d
 from torch.nn import functional as F
 from torch.nn.utils import spectral_norm, weight_norm
+
 import so_vits_svc_fork.modules.attentions as attentions
 import so_vits_svc_fork.modules.commons as commons
 import so_vits_svc_fork.modules.modules as modules
@@ -11,8 +13,6 @@ from . import utils
 from .modules.commons import get_padding
 from .utils import f0_to_coarse
 from .vdecoder.hifigan.models import Generator
-
-import torch.autograd.profiler as profiler
 
 
 class ResidualCouplingBlock(nn.Module):
@@ -259,9 +259,9 @@ class MultiPeriodDiscriminator(torch.nn.Module):
         super().__init__()
         periods = [2, 3, 5, 7, 11]
 
-        self.discriminators = nn.ModuleList([
-            DiscriminatorP(i, use_spectral_norm=use_spectral_norm) for i in periods
-        ])
+        self.discriminators = nn.ModuleList(
+            [DiscriminatorP(i, use_spectral_norm=use_spectral_norm) for i in periods]
+        )
 
     def forward(self, y, y_hat):
         y_d_rs = []
@@ -311,22 +311,25 @@ class MultiScaleDiscriminator(torch.nn.Module):
 
         return y_d_rs, y_d_gs, fmap_rs, fmap_gs
 
+
 class DiscriminatorR(torch.nn.Module):
     def __init__(self, resolution, use_spectral_norm=False):
-        super(DiscriminatorR, self).__init__()
+        super().__init__()
 
         self.resolution = resolution
-        self.LRELU_SLOPE = 0.2 # Hardcoded
+        self.LRELU_SLOPE = 0.2  # Hardcoded
 
         norm_f = weight_norm if not use_spectral_norm else spectral_norm
 
-        self.convs = nn.ModuleList([
-            norm_f(nn.Conv2d(1, 32, (3, 9), padding=(1, 4))),
-            norm_f(nn.Conv2d(32, 32, (3, 9), stride=(1, 2), padding=(1, 4))),
-            norm_f(nn.Conv2d(32, 32, (3, 9), stride=(1, 2), padding=(1, 4))),
-            norm_f(nn.Conv2d(32, 32, (3, 9), stride=(1, 2), padding=(1, 4))),
-            norm_f(nn.Conv2d(32, 32, (3, 3), padding=(1, 1))),
-        ])
+        self.convs = nn.ModuleList(
+            [
+                norm_f(nn.Conv2d(1, 32, (3, 9), padding=(1, 4))),
+                norm_f(nn.Conv2d(32, 32, (3, 9), stride=(1, 2), padding=(1, 4))),
+                norm_f(nn.Conv2d(32, 32, (3, 9), stride=(1, 2), padding=(1, 4))),
+                norm_f(nn.Conv2d(32, 32, (3, 9), stride=(1, 2), padding=(1, 4))),
+                norm_f(nn.Conv2d(32, 32, (3, 3), padding=(1, 1))),
+            ]
+        )
         self.conv_post = norm_f(nn.Conv2d(32, 1, (3, 3), padding=(1, 1)))
 
     def forward(self, x):
@@ -346,20 +349,38 @@ class DiscriminatorR(torch.nn.Module):
 
     def spectrogram(self, x):
         n_fft, hop_length, win_length = self.resolution
-        x = F.pad(x, (int((n_fft - hop_length) / 2), int((n_fft - hop_length) / 2)), mode='reflect')
+        x = F.pad(
+            x,
+            (int((n_fft - hop_length) / 2), int((n_fft - hop_length) / 2)),
+            mode="reflect",
+        )
         x = x.squeeze(1)
-        x = torch.stft(x, n_fft=n_fft, hop_length=hop_length, win_length=win_length, center=False, return_complex=False) #[B, F, TT, 2]
-        mag = torch.norm(x, p=2, dim =-1) #[B, F, TT]
+        x = torch.stft(
+            x,
+            n_fft=n_fft,
+            hop_length=hop_length,
+            win_length=win_length,
+            center=False,
+            return_complex=False,
+        )  # [B, F, TT, 2]
+        mag = torch.norm(x, p=2, dim=-1)  # [B, F, TT]
 
         return mag
 
 
 class MultiResolutionDiscriminator(torch.nn.Module):
     def __init__(self, use_spectral_norm=False):
-        super(MultiResolutionDiscriminator, self).__init__()
-        self.resolutions = [(1024, 120, 600), (2048, 240, 1200), (512, 50, 240)] # Hard coded
+        super().__init__()
+        self.resolutions = [
+            (1024, 120, 600),
+            (2048, 240, 1200),
+            (512, 50, 240),
+        ]  # Hard coded
         self.discriminators = nn.ModuleList(
-            [DiscriminatorR(resolution, use_spectral_norm) for resolution in self.resolutions]
+            [
+                DiscriminatorR(resolution, use_spectral_norm)
+                for resolution in self.resolutions
+            ]
         )
 
     def forward(self, y, y_hat):
@@ -381,17 +402,36 @@ class MultiResolutionDiscriminator(torch.nn.Module):
 class Discriminator(torch.nn.Module):
     def __init__(self, use_spectral_norm=False):
         super().__init__()
-        self.multi_period_discriminator = MultiPeriodDiscriminator(use_spectral_norm=use_spectral_norm)
+        self.multi_period_discriminator = MultiPeriodDiscriminator(
+            use_spectral_norm=use_spectral_norm
+        )
         self.multi_scale_discriminator = MultiScaleDiscriminator()
-        self.multi_resolution_discriminator = MultiResolutionDiscriminator(use_spectral_norm=use_spectral_norm)
+        self.multi_resolution_discriminator = MultiResolutionDiscriminator(
+            use_spectral_norm=use_spectral_norm
+        )
 
     def forward(self, y, y_hat):
         with profiler.record_function("MultiPeriodDiscriminator"):
-            y_d_rs_periods, y_d_gs_periods, fmap_rs_periods, fmap_gs_periods = self.multi_period_discriminator(y, y_hat)
+            (
+                y_d_rs_periods,
+                y_d_gs_periods,
+                fmap_rs_periods,
+                fmap_gs_periods,
+            ) = self.multi_period_discriminator(y, y_hat)
         with profiler.record_function("MultiScaleDiscriminator"):
-            y_d_rs_scales, y_d_gs_scales, fmap_rs_scales, fmap_gs_scales = self.multi_scale_discriminator(y, y_hat)
+            (
+                y_d_rs_scales,
+                y_d_gs_scales,
+                fmap_rs_scales,
+                fmap_gs_scales,
+            ) = self.multi_scale_discriminator(y, y_hat)
         with profiler.record_function("MultiResolutionDiscriminator"):
-            y_d_rs_resols, y_d_gs_resols, fmap_rs_resols, fmap_gs_resols = self.multi_resolution_discriminator(y, y_hat)
+            (
+                y_d_rs_resols,
+                y_d_gs_resols,
+                fmap_rs_resols,
+                fmap_gs_resols,
+            ) = self.multi_resolution_discriminator(y, y_hat)
 
         y_d_rs = y_d_rs_periods + y_d_rs_scales + y_d_rs_resols
         y_d_gs = y_d_gs_periods + y_d_gs_scales + y_d_gs_resols

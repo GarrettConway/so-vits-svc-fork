@@ -269,7 +269,7 @@ class Svc:
             LOG.info(f"Chunk: {chunk}")
             if not chunk.is_speech:
                 audio_chunk_infer = np.zeros_like(chunk.audio)
-                #audio_chunk_infer = chunk.audio
+                # audio_chunk_infer = chunk.audio
             else:
                 # pad
                 pad_len = int(sr * pad_seconds)

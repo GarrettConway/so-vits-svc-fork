@@ -12,7 +12,6 @@ import torch.multiprocessing as mp
 from torch.cuda.amp import GradScaler, autocast
 from torch.nn import functional as F
 from torch.nn.parallel import DistributedDataParallel as DDP
-import torch._dynamo as dynamo
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import trange
@@ -20,7 +19,11 @@ from tqdm import trange
 import so_vits_svc_fork.modules.commons as commons
 
 from . import utils
-from .data_utils import TextAudioCollate, TextAudioSpeakerLoader, PreloadedTextAudioSpeakerLoader, WorstPerformingTextAudioSpeakerBatchLoader
+from .data_utils import (
+    TextAudioCollate,
+    TextAudioSpeakerLoader,
+    WorstPerformingTextAudioSpeakerBatchLoader,
+)
 from .models import Discriminator, SynthesizerTrn
 from .modules.losses import discriminator_loss, feature_loss, generator_loss, kl_loss
 from .modules.mel_processing import mel_spectrogram_torch, spec_to_mel_torch
@@ -30,7 +33,7 @@ from .modules.mel_processing import mel_spectrogram_torch, spec_to_mel_torch
 
 LOG = getLogger(__name__)
 torch.backends.cudnn.benchmark = True
-torch.set_float32_matmul_precision('high')
+torch.set_float32_matmul_precision("high")
 torch._dynamo.config.verbose = False
 torch._dynamo.config.suppress_errors = False
 
@@ -77,16 +80,16 @@ def run(rank, n_gpus, hps):
 
     # for pytorch on win, backend use gloo
     dist.init_process_group(
-       backend="gloo" if os.name == "nt" else "nccl",
-       init_method="env://",
-       world_size=n_gpus,
-       rank=rank,
+        backend="gloo" if os.name == "nt" else "nccl",
+        init_method="env://",
+        world_size=n_gpus,
+        rank=rank,
     )
     torch.manual_seed(hps.train.seed)
     torch.cuda.set_device(rank)
     collate_fn = TextAudioCollate()
     train_dataset = TextAudioSpeakerLoader(hps.data.training_files, hps)
-    #train_dataset = PreloadedTextAudioSpeakerLoader(hps.data.training_files, hps)
+    # train_dataset = PreloadedTextAudioSpeakerLoader(hps.data.training_files, hps)
     num_workers = 5 if multiprocessing.cpu_count() > 4 else multiprocessing.cpu_count()
     train_loader = DataLoader(
         train_dataset,
@@ -134,8 +137,8 @@ def run(rank, n_gpus, hps):
 
     # net_d =  DDP(net_d, device_ids=[rank])
 
-    #net_g = net_g
-    #net_d = net_d
+    # net_g = net_g
+    # net_d = net_d
 
     skip_optimizer = False
     try:
@@ -177,7 +180,6 @@ def run(rank, n_gpus, hps):
     build_worst_loader = False
     use_worst_loader = False
     for epoch in trange(epoch_str, hps.train.epochs + 1):
-
         # if counter == 9:
         #     build_worst_loader = True
         # elif counter == 10:
@@ -199,7 +201,7 @@ def run(rank, n_gpus, hps):
                 [train_loader, eval_loader],
                 [writer, writer_eval],
                 build_worst_loader=build_worst_loader,
-                use_worst_loader=use_worst_loader
+                use_worst_loader=use_worst_loader,
             )
         else:
             train_and_evaluate(
@@ -219,7 +221,17 @@ def run(rank, n_gpus, hps):
 
 
 def train_and_evaluate(
-    rank, epoch, hps, nets, optims, schedulers, scaler, loaders, writers, use_worst_loader=False, build_worst_loader=False
+    rank,
+    epoch,
+    hps,
+    nets,
+    optims,
+    schedulers,
+    scaler,
+    loaders,
+    writers,
+    use_worst_loader=False,
+    build_worst_loader=False,
 ):
     net_g, net_d = nets
     optim_g, optim_d = optims
@@ -264,7 +276,9 @@ def train_and_evaluate(
     net_d.requires_grad_(True)
     net_d.module.requires_grad_(True)
 
-    if (use_worst_loader or build_worst_loader) and not ("worst_loader" in globals() or "worst_loader" in locals()):
+    if (use_worst_loader or build_worst_loader) and not (
+        "worst_loader" in globals() or "worst_loader" in locals()
+    ):
         worst_loader = WorstPerformingTextAudioSpeakerBatchLoader()
     if use_worst_loader:
         worst_loader.prepare()
@@ -273,20 +287,14 @@ def train_and_evaluate(
     #   /END FREEZING LOGIC
     ###
     with torch.profiler.profile(
-        #activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
+        # activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
         activities=[],
-        schedule=torch.profiler.schedule(
-            wait=2,
-            warmup=50,
-            active=1,
-            repeat=1
-        ),
-        #record_shapes=True,
-
-        #profile_memory=True,
-        #with_stack=True,
-        #with_modules=True,
-        on_trace_ready=torch.profiler.tensorboard_trace_handler("test")
+        schedule=torch.profiler.schedule(wait=2, warmup=50, active=1, repeat=1),
+        # record_shapes=True,
+        # profile_memory=True,
+        # with_stack=True,
+        # with_modules=True,
+        on_trace_ready=torch.profiler.tensorboard_trace_handler("test"),
     ) as prof:
         for batch_idx, items in enumerate(train_loader):
             # This worked REALLY well to restart the discriminator by running for 1 iteration
@@ -300,7 +308,9 @@ def train_and_evaluate(
 
             c, f0, spec, y, spk, lengths, uv = items
             g = spk.cuda(rank, non_blocking=True)
-            spec, y = spec.cuda(rank, non_blocking=True), y.cuda(rank, non_blocking=True)
+            spec, y = spec.cuda(rank, non_blocking=True), y.cuda(
+                rank, non_blocking=True
+            )
             c = c.cuda(rank, non_blocking=True)
             f0 = f0.cuda(rank, non_blocking=True)
             uv = uv.cuda(rank, non_blocking=True)
@@ -405,8 +415,10 @@ def train_and_evaluate(
                     # )
 
                     LOG.info(
-                        'Discriminator Loss: {:f}, Generator Loss: {:f}, Feature Loss: {:f}, Mel Loss: {:f}, KL Loss: {:f}, Step: {:n}, LR: {:f}'.format(
-                            *([x.item() for x in losses] + [global_step, lr])))
+                        "Discriminator Loss: {:f}, Generator Loss: {:f}, Feature Loss: {:f}, Mel Loss: {:f}, KL Loss: {:f}, Step: {:n}, LR: {:f}".format(
+                            *([x.item() for x in losses] + [global_step, lr])
+                        )
+                    )
 
                     scalar_dict = {
                         "loss/g/total": loss_gen_all,
@@ -482,7 +494,7 @@ def train_and_evaluate(
                         )
 
             global_step += 1
-            #prof.step()
+            # prof.step()
 
     if rank == 0:
         global start_time

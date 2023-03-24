@@ -2,13 +2,13 @@ import torch
 
 
 def feature_loss(fmap_r, fmap_g):
-    #loss = 0
+    # loss = 0
     losses = []
     for dr, dg in zip(fmap_r, fmap_g):
         for rl, gl in zip(dr, dg):
             rl = rl.float().detach()
             gl = gl.float()
-            #loss += torch.mean(torch.abs(rl - gl))
+            # loss += torch.mean(torch.abs(rl - gl))
             losses.append(torch.mean(torch.abs(rl - gl)))
 
     loss = torch.stack(losses).sum()

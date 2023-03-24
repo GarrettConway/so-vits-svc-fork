@@ -287,7 +287,12 @@ class SineGen(torch.nn.Module):
             # f0_buf = torch.zeros(f0.shape[0], f0.shape[1], self.dim, device=f0.device)
             # fundamental component
             fn = torch.multiply(
-                f0, torch.tensor([range(1, self.harmonic_num + 2)], dtype=torch.float32, device=f0.device).unsqueeze(0)
+                f0,
+                torch.tensor(
+                    [range(1, self.harmonic_num + 2)],
+                    dtype=torch.float32,
+                    device=f0.device,
+                ).unsqueeze(0),
             )
 
             # generate sine waveforms
@@ -366,7 +371,7 @@ class SourceModuleHnNSF(torch.nn.Module):
         return sine_merge, noise, uv
 
 
-#@torch.compile(disable=True)
+# @torch.compile(disable=True)
 class Generator(torch.nn.Module):
     def __init__(self, h):
         super().__init__()

@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="7aacf003-229b-4eb0-80a4-ff105dc3c3d4" name="変更" comment="chore(preprocessing): small tweaks and fixes to preprocessing for training data">
+    <list default="true" id="7aacf003-229b-4eb0-80a4-ff105dc3c3d4" name="変更" comment="LOCAL_MAIN">
       <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/so-vits-svc-fork.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/so-vits-svc-fork.iml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
@@ -90,8 +90,8 @@
       <window_info id="Space Code Reviews" order="0" weight="0.68211293" />
       <window_info id="Bookmarks" order="1" side_tool="true" />
       <window_info id="Pull Requests" order="2" weight="0.24188244" />
-      <window_info content_ui="combo" id="Project" order="3" sideWeight="0.5004472" weight="0.14918032" />
-      <window_info active="true" id="Commit" order="4" visible="true" weight="0.26029143" />
+      <window_info content_ui="combo" id="Project" order="3" sideWeight="0.5004472" weight="0.14902698" />
+      <window_info active="true" id="Commit" order="4" visible="true" weight="0.26032776" />
       <window_info id="Learn" order="5" weight="0.24188244" />
       <window_info id="VcsChanges" order="6" />
       <window_info id="Structure" order="7" side_tool="true" />
@@ -100,11 +100,11 @@
       <window_info anchor="bottom" id="File Transfer" order="2" />
       <window_info anchor="bottom" id="Python Console" order="3" weight="0.32992893" />
       <window_info anchor="bottom" id="Problems View" order="4" weight="0.32992893" />
-      <window_info active="true" anchor="bottom" id="Terminal" order="5" visible="true" weight="0.121417195" />
+      <window_info anchor="bottom" id="Terminal" order="5" weight="0.121417195" />
       <window_info anchor="bottom" id="TypeScript" order="6" />
       <window_info anchor="bottom" id="Services" order="7" />
       <window_info anchor="bottom" id="Dependency Checker" order="8" />
-      <window_info anchor="bottom" x="462" y="431" width="2566" height="419" id="Version Control" order="9" sideWeight="0.4995528" weight="0.46403196" />
+      <window_info active="true" anchor="bottom" x="462" y="431" width="2566" height="419" id="Version Control" order="9" sideWeight="0.4995528" visible="true" weight="0.46368918" />
       <window_info anchor="bottom" id="Duplicates" order="10" weight="0.32992893" />
       <window_info anchor="bottom" id="Run" order="11" />
       <window_info anchor="right" id="Meet New UI" show_stripe_button="false" side_tool="true" weight="0.37433255" />
@@ -112,7 +112,7 @@
       <window_info anchor="right" id="Database" order="1" />
       <window_info anchor="right" id="SciView" order="2" />
       <window_info anchor="right" id="documentation.v2" order="3" side_tool="true" />
-      <window_info anchor="right" id="Notifications" order="4" weight="0.25010276" />
+      <window_info active="true" anchor="right" id="Notifications" order="4" visible="true" weight="0.25008535" />
     </layout>
   </component>
   <component name="RunManager" selected="Python.so-vits-svc-fork">
@@ -214,7 +214,24 @@
       <map>
         <entry key="MAIN">
           <value>
-            <State />
+            <State>
+              <option name="CUSTOM_BOOLEAN_PROPERTIES">
+                <map>
+                  <entry key="Show.Git.Branches" value="true" />
+                </map>
+              </option>
+              <option name="FILTERS">
+                <map>
+                  <entry key="branch">
+                    <value>
+                      <list>
+                        <option value="main" />
+                      </list>
+                    </value>
+                  </entry>
+                </map>
+              </option>
+            </State>
           </value>
         </entry>
       </map>
@@ -223,7 +240,8 @@
   <component name="VcsManagerConfiguration">
     <MESSAGE value="chore(preprocessing): address mr" />
     <MESSAGE value="chore(preprocessing): small tweaks and fixes to preprocessing for training data" />
-    <option name="LAST_COMMIT_MESSAGE" value="chore(preprocessing): small tweaks and fixes to preprocessing for training data" />
+    <MESSAGE value="LOCAL_MAIN" />
+    <option name="LAST_COMMIT_MESSAGE" value="LOCAL_MAIN" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/so_vits_svc_fork$so_vits_svc_fork.coverage" NAME="so-vits-svc-fork Coverage Results" MODIFIED="1679130578263" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="" />

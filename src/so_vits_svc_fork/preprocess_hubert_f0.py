@@ -37,7 +37,9 @@ def _process_one(
             wav, orig_sr=sampling_rate, target_sr=HUBERT_SAMPLING_RATE
         )
         wav16k = torch.from_numpy(wav16k).to(device)
-        c = utils.get_hubert_content(hubert_model, wav_16k_tensor=wav16k, enable_logging=False)
+        c = utils.get_hubert_content(
+            hubert_model, wav_16k_tensor=wav16k, enable_logging=False
+        )
         torch.save(c.cpu(), soft_path)
     else:
         LOG.info(f"Skip {filepath} because {soft_path} exists.")
@@ -46,7 +48,11 @@ def _process_one(
     f0_path = filepath.parent / (filepath.name + ".f0.npy")
     if not f0_path.exists() or force_rebuild:
         f0 = utils.compute_f0(
-            wav, sampling_rate=sampling_rate, hop_length=hop_length, method=f0_method, enable_logging=False
+            wav,
+            sampling_rate=sampling_rate,
+            hop_length=hop_length,
+            method=f0_method,
+            enable_logging=False,
         )
         np.save(f0_path, f0)
     else:

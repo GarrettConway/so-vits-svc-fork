@@ -43,9 +43,7 @@ def preprocess_config(
     spk_id = 0
     if keep_old_speaker_embeddings:
         try:
-            old_config = deepcopy(
-                json.loads(config_path.read_text())
-            )
+            old_config = deepcopy(json.loads(config_path.read_text()))
             spk_dict = old_config["spk"]
             spk_id = max(spk_dict.values()) + 1
         except Exception as e:

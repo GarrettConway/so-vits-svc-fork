@@ -1,3 +1,4 @@
+import heapq
 import os
 import random
 
@@ -8,9 +9,6 @@ import torch.utils.data
 from . import utils
 from .modules.mel_processing import spectrogram_torch
 from .utils import load_filepaths_and_text, load_wav_to_torch
-
-import heapq
-
 
 # import h5py
 
@@ -99,7 +97,7 @@ class TextAudioSpeakerLoader(torch.utils.data.Dataset):
                 f0[start:end],
                 uv[start:end],
             )
-            audio_norm = audio_norm[:, start * self.hop_length: end * self.hop_length]
+            audio_norm = audio_norm[:, start * self.hop_length : end * self.hop_length]
 
         return c, f0, spec, audio_norm, spk, uv
 
@@ -149,7 +147,7 @@ class PreloadedTextAudioSpeakerLoader(torch.utils.data.Dataset):
                 f0[start:end],
                 uv[start:end],
             )
-            audio_norm = audio_norm[:, start * self.hop_length: end * self.hop_length]
+            audio_norm = audio_norm[:, start * self.hop_length : end * self.hop_length]
 
         return c, f0, spec, audio_norm, spk, uv
 
@@ -269,7 +267,7 @@ class WorstPerformingTextAudioSpeakerBatchLoader:
         return self.prepared_batches[idx]
 
     def __len__(self):
-        return len(self.prepared_batches)*10000
+        return len(self.prepared_batches) * 10000
 
 
 class TextAudioCollate:

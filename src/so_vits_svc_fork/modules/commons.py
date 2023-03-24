@@ -90,7 +90,13 @@ def slice_segments_old(x, ids_str, segment_size=4):
 
 
 def slice_segments(x, ids_str, segment_size=4):
-    b, d, t = x.size()  # Get the dimensions of the input tensor (batch_size, feature_dim, time_steps)
+    (
+        b,
+        d,
+        t,
+    ) = (
+        x.size()
+    )  # Get the dimensions of the input tensor (batch_size, feature_dim, time_steps)
 
     # Create a tensor of time indices and expand it to match the batch size
     time_indices = torch.arange(segment_size, device=x.device).expand(b, -1)
@@ -166,7 +172,9 @@ def subsequent_mask(length: int) -> torch.Tensor:
 #     return acts
 
 
-def fused_add_tanh_sigmoid_multiply(input_a: torch.Tensor, input_b: torch.Tensor, n_channels) -> torch.Tensor:
+def fused_add_tanh_sigmoid_multiply(
+    input_a: torch.Tensor, input_b: torch.Tensor, n_channels
+) -> torch.Tensor:
     """
     ChatGPT4 generated
     This function combines addition, tanh, and sigmoid functions, and element-wise multiplication.

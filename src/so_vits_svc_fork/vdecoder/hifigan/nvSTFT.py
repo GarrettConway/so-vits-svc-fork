@@ -144,7 +144,7 @@ class STFT:
             normalized=False,
             onesided=True,
             # Testing (can this be removed in favor of torch impl?)
-            return_complex=False
+            return_complex=False,
         )
         # LOG.info(111,spec)
         spec = torch.sqrt(spec.pow(2).sum(-1) + (1e-9))
